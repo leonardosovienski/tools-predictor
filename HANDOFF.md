@@ -1,5 +1,9 @@
 # HANDOFF — predictor-ops
 
+## Entrega arquitetural publicada — 11/09/2026
+
+Versão **4.2.0** publicada: [release e artefatos](https://github.com/leonardosovienski/predictor-ops/releases/tag/v4.2.0). [CI de engenharia aprovada](https://github.com/leonardosovienski/predictor-ops/actions/runs/34628184138) para a fonte `e804ac8b5173156737e2212d9bd47cd3f2072700`. Consulte [ARCHITECTURE_IMPLEMENTATION.md](ARCHITECTURE_IMPLEMENTATION.md) para comportamento, migração e limites. Este registro atualiza a entrega de software; estados científicos e registros datados abaixo conservam sua autoridade e contexto histórico.
+
 **Estado corrente: 2026-09-06 — versão 4.1.0.**
 
 > Não instale `predictor_ops==4.0.0`: essa versão designa dois conteúdos
