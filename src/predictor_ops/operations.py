@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from enum import StrEnum
 
-from .models import JobConfig, JobType, RiskSnapshot
+from .models import JobConfig, JobType, KillSwitchLimits, RiskSnapshot
 
 
 class OrderState(StrEnum):
@@ -40,7 +41,7 @@ def economic_lock_id(job: JobConfig) -> str:
     return f"economic-{digest}"
 
 
-def kill_switch_reasons(job: JobConfig) -> list[str]:
+def kill_switch_reasons(job: JobConfig, *, now: datetime | None = None) -> list[str]:
     """Return deterministic fail-closed reasons before opening a new position."""
     if job.job_type is not JobType.EXECUTION:
         return []
@@ -49,6 +50,23 @@ def kill_switch_reasons(job: JobConfig) -> list[str]:
         return ["risk_snapshot_missing"]
     limits = job.kill_switch_limits
     reasons: list[str] = []
+    if job.economic_key is None:
+        reasons.append("economic_key_missing")
+    required = set(RiskSnapshot.model_fields) - {"source", "observed_at"}
+    if not required.issubset(snapshot.model_fields_set):
+        reasons.append("risk_snapshot_incomplete")
+    if not job.risk_source or not snapshot.source or snapshot.source != job.risk_source:
+        reasons.append("risk_source_unverified")
+    if snapshot.observed_at is None or job.risk_max_age_seconds is None:
+        reasons.append("risk_freshness_missing")
+    else:
+        age = ((now or datetime.now(UTC)) - snapshot.observed_at).total_seconds()
+        if age < 0:
+            reasons.append("risk_snapshot_from_future")
+        elif age > job.risk_max_age_seconds:
+            reasons.append("risk_snapshot_stale")
+    if any(getattr(limits, field) is None for field in KillSwitchLimits.model_fields):
+        reasons.append("risk_limits_incomplete")
     comparisons = (
         (limits.max_daily_loss, snapshot.daily_loss, "daily_loss_limit"),
         (limits.max_drawdown, snapshot.drawdown, "drawdown_limit"),

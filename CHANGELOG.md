@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.2.0 — candidato local, não publicado
+
+- Jobs genéricos aceitos no schema 3; política econômica continua explícita.
+- Execução econômica recusa risco incompleto, vencido, futuro ou não finito.
+- Chaves recusam o separador reservado; mutações de lease usam exclusão do sistema operacional.
+- Antes de migrar, interromper runners antigos ou usar um runtime root novo: processos anteriores não respeitam o novo guard.
+
 ## 4.1.0
 
 - Adiciona o contrato de proveniência operacional: `JobConfig` aceita

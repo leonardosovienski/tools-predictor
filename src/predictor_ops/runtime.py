@@ -5,11 +5,55 @@ import os
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from .models import RuntimeConfig
+
+
+@contextmanager
+def _mutation_guard(path: Path):
+    """Serialize ownership checks and mutations on a persistent OS-locked inode.
+
+    The guard is never unlinked. OS locks are released when a process dies,
+    avoiding a second stale-file takeover protocol around the lease itself.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if path.stat().st_size == 0:
+            handle.write(b"0")
+            handle.flush()
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                handle.seek(0)
+                if sys.platform == "win32":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("lock mutation guard timeout") from None
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if sys.platform == "win32":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 class Lock(Protocol):
@@ -97,14 +141,17 @@ class LocalLock:
             return False
 
     def refresh(self) -> bool:
-        if not self._owned():
-            return False
-        os.utime(self.path, None)
-        return True
+        with _mutation_guard(self.path.with_name(".mutation.guard")):
+            if not self._acquired or not self._owned():
+                return False
+            os.utime(self.path, None)
+            return True
 
     def release(self) -> None:
-        if self._owned():
-            self.path.unlink(missing_ok=True)
+        with _mutation_guard(self.path.with_name(".mutation.guard")):
+            if self._acquired and self._owned():
+                self.path.unlink(missing_ok=True)
+            self._acquired = False
 
 
 class LocalBackend:
@@ -112,6 +159,10 @@ class LocalBackend:
         self.root = root
 
     def acquire(self, job_id: str, run_id: str, ttl: float) -> LocalLock:
+        with _mutation_guard(self.root / job_id / ".mutation.guard"):
+            return self._acquire(job_id, run_id, ttl)
+
+    def _acquire(self, job_id: str, run_id: str, ttl: float) -> LocalLock:
         path = self.root / job_id / "run.lock"
         path.parent.mkdir(parents=True, exist_ok=True)
         for _ in range(3):

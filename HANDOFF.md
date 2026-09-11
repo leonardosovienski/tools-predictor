@@ -29,3 +29,8 @@ uv run pyright
 
 Não editar repositórios consumidores a partir deste projeto. Integrações são feitas
 por configuração do consumidor e wheel publicado.
+
+
+## Implementação arquitetural local — 2026-09-11
+
+As alterações candidatas, seus limites, verificações e rollback estão em [ARCHITECTURE_IMPLEMENTATION.md](ARCHITECTURE_IMPLEMENTATION.md). Esta implementação local não publica releases, não atualiza automaticamente os consumidores e não altera os vereditos científicos históricos.

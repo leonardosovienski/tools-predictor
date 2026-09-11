@@ -40,6 +40,13 @@ class EconomicJobKey(BaseModel):
     decision_stage: Annotated[str, Field(min_length=1, max_length=128)]
     logical_time: datetime
 
+    @field_validator("domain", "event_id", "market", "decision_stage")
+    @classmethod
+    def identity_has_no_separator(cls, value: str) -> str:
+        if "\x1f" in value:
+            raise ValueError("economic identity cannot contain the canonical separator")
+        return value
+
     @field_validator("logical_time")
     @classmethod
     def logical_time_is_timezone_aware(cls, value: datetime) -> datetime:
@@ -59,7 +66,7 @@ class EconomicJobKey(BaseModel):
 
 
 class KillSwitchLimits(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     max_daily_loss: Annotated[float, Field(ge=0)] | None = None
     max_drawdown: Annotated[float, Field(ge=0)] | None = None
     max_balance_difference: Annotated[float, Field(ge=0)] | None = None
@@ -68,7 +75,9 @@ class KillSwitchLimits(BaseModel):
 
 
 class RiskSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    source: Annotated[str, Field(min_length=1)] | None = None
+    observed_at: datetime | None = None
     daily_loss: float = 0
     drawdown: float = 0
     settlement_healthy: bool = True
@@ -80,6 +89,15 @@ class RiskSnapshot(BaseModel):
     drift_detected: bool = False
     correlated_exposure: float = 0
 
+    @field_validator("observed_at")
+    @classmethod
+    def observation_is_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None:
+            if value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError("observed_at must include a timezone")
+            return value.astimezone(UTC)
+        return value
+
 
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -89,7 +107,7 @@ class RuntimeConfig(BaseModel):
 
 
 class JobConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
     command: Annotated[list[str], Field(min_length=1)]
     cwd: Path | None = None
@@ -111,6 +129,8 @@ class JobConfig(BaseModel):
     capital_permission: bool = False
     kill_switch_limits: KillSwitchLimits = Field(default_factory=KillSwitchLimits)
     risk_snapshot: RiskSnapshot | None = None
+    risk_max_age_seconds: Annotated[float, Field(gt=0)] | None = None
+    risk_source: Annotated[str, Field(min_length=1)] | None = None
     exit_statuses: dict[int, RunStatus] = Field(default_factory=lambda: {0: RunStatus.SUCCEEDED, 2: RunStatus.PARTIAL})
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
 
@@ -146,7 +166,7 @@ class JobConfig(BaseModel):
 
 class JobsFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    schema_version: Literal["1", "2"] = "1"
+    schema_version: Literal["1", "2", "3"] = "1"
     jobs: list[JobConfig]
 
     @model_validator(mode="after")
@@ -154,9 +174,9 @@ class JobsFile(BaseModel):
         ids = [job.id for job in self.jobs]
         if len(ids) != len(set(ids)):
             raise ValueError("job ids must be unique")
-        if self.schema_version == "2":
-            if any(job.job_type is None or job.economic_key is None for job in self.jobs):
-                raise ValueError("schema v2 requires job_type and economic_key for every job")
+        if self.schema_version == "2" and any(job.job_type is None or job.economic_key is None for job in self.jobs):
+            raise ValueError("schema v2 requires job_type and economic_key for every job")
+        if self.schema_version in {"2", "3"}:
             keys = [job.economic_key.canonical() for job in self.jobs if job.economic_key]
             if len(keys) != len(set(keys)):
                 raise ValueError("economic job keys must be unique")

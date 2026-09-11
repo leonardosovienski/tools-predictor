@@ -48,6 +48,22 @@ def test_factory_is_local_only(tmp_path):
     assert isinstance(backend(RuntimeConfig(root=tmp_path)), LocalBackend)
 
 
+def test_stale_takeover_has_one_winner_across_processes(tmp_path):
+    old = LocalBackend(tmp_path).acquire("race", "expired", 60)
+    os.utime(old.path, (time.time() - 61, time.time() - 61))
+    context = multiprocessing.get_context("spawn")
+    barrier, queue = context.Barrier(2), context.Queue()
+    processes = [context.Process(target=_local_racer, args=(tmp_path, barrier, queue, token)) for token in ("a", "b")]
+    for process in processes:
+        process.start()
+    assert sum(queue.get(timeout=10) for _ in processes) == 1
+    assert not old.refresh()
+    old.release()
+    for process in processes:
+        process.join(10)
+        assert process.exitcode == 0
+
+
 def test_atomic_json_and_durable_jsonl(tmp_path):
     heartbeat, events = tmp_path / "heartbeat.json", tmp_path / "events.jsonl"
     atomic_json(heartbeat, {"ok": True})

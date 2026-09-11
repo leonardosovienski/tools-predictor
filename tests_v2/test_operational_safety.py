@@ -29,13 +29,30 @@ def key(stage="execute"):
 
 
 def execution(tmp_path, code="print('sent')", **values):
+    snapshot = RiskSnapshot(
+        **RiskSnapshot().model_dump(exclude={"source", "observed_at"}),
+        source="synthetic-risk",
+        observed_at=datetime.now(UTC),
+    )
     return JobConfig(
         id=values.pop("id", "execute"),
         command=[sys.executable, "-c", code],
         job_type=JobType.EXECUTION,
         economic_key=key(),
         capital_permission=True,
-        risk_snapshot=values.pop("risk_snapshot", RiskSnapshot()),
+        risk_snapshot=values.pop("risk_snapshot", snapshot),
+        risk_source="synthetic-risk",
+        risk_max_age_seconds=60,
+        kill_switch_limits=values.pop(
+            "kill_switch_limits",
+            KillSwitchLimits(
+                max_daily_loss=100,
+                max_drawdown=100,
+                max_balance_difference=100,
+                max_latency_ms=1000,
+                max_correlated_exposure=100,
+            ),
+        ),
         runtime=RuntimeConfig(root=tmp_path),
         **values,
     )

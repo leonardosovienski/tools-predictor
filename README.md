@@ -105,3 +105,8 @@ Audit and transition records are versioned under `docs/`: the 149-row legacy
 behavior matrix, removed-operations plan, compatibility guide, and observed
 Windows/Linux/container evidence. Version 4 removes deprecated compatibility,
 vendor-audit, hash-chain and Redis coordination surfaces.
+
+
+## Implementação arquitetural local — 2026-09-11
+
+As alterações candidatas, seus limites, verificações e rollback estão em [ARCHITECTURE_IMPLEMENTATION.md](ARCHITECTURE_IMPLEMENTATION.md). Esta implementação local não publica releases, não atualiza automaticamente os consumidores e não altera os vereditos científicos históricos.
